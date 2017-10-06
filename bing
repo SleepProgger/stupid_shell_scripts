@@ -1,0 +1,83 @@
+#!/bin/sh
+# TODO: max for delay in ping_pong to prevent desync
+
+test -z "$1" && echo "USAGE: $0 IP
+Beeps to represent the latency of pings in a comfortable way.
+Set enviroment variables to define the behaviour:
+  BEEP_METHOD[do_beep] : One of:
+    do_beep        : Beeps with a higher frequency for worse pings.
+    do_espeak_beep : Like do_beep but uses espeak saying beep.
+    do_pingpong    : Uses espeak to say ping/pong. The delay between both represents the latency.
+  PING_DELAY[1] : Ping delay in seconds.
+  BEEP_FREQ_MUL[5] : Multiplicator used in do_beep.
+  BEEP_LENGTH[1000] : Lenght of a do_beep beep in ms.
+  ESPEAK_PARAMS[-v english -s 250] : Espeak parameter appended to all espeak calls.
+  ESPEAK_BEEP_PITCH_MUL[1] : Multiplicator used in do_espeak_beep.
+  ESPEAK_PONG_DELAY_MUL[10] : Multiplicator used in espeak_ping_pong.
+  ESPEAK_TEXT_BEEP[Beep]
+  ESPEAK_TEXT_PING[Ping.]
+  ESPEAK_TEXT_PONG[Pong.]
+
+  The author of this script is not responsible for any sudden deafness,
+  insanity or fake pizza delivers provoked by this script.
+" && exit 1
+IP="$1"
+
+test -z "${PING_DELAY}" && PING_DELAY="1"
+test -z "${BEEP_METHOD}" && BEEP_METHOD="do_beep"
+
+# Beep parameter
+test -z "${BEEP_FREQ_MUL}" && BEEP_FREQ_MUL="5"
+test -z "${BEEP_LENGTH}" && BEEP_LENGTH="1000" # in ms
+
+# Espeak parameter
+# Should supply a -s (speed) parameter high enough to speak in less than $PING_DELAY (default is 160).
+test -z "${ESPEAK_PARAMS}" && ESPEAK_PARAMS='-v english -s 250'
+test -z "${ESPEAK_BEEP_PITCH_MUL}" && ESPEAK_BEEP_PITCH_MUL="1"
+# $ESPEAK_PONG_DELAY_MUL * ping_time = sleep time after pong response and before pong speak.
+# Set to 0 to avoid sleeping at all. You should ensure it is small enough for espeak to keep up with ping.
+test -z "${ESPEAK_PONG_DELAY_MUL}" && ESPEAK_PONG_DELAY_MUL="10"
+test -z "${ESPEAK_TEXT_BEEB}" && ESPEAK_TEXT_BEEP="Beep"
+test -z "${ESPEAK_TEXT_PING}" && ESPEAK_TEXT_PING="Ping."
+test -z "${ESPEAK_TEXT_PONG}" && ESPEAK_TEXT_PONG="Pong."
+
+
+
+do_beep () {
+  while read line; do
+    beep -l "$BEEP_LENGTH" -f $(echo "$line * $BEEP_FREQ_MUL" | bc)
+  done
+}
+
+do_espeak_beep () {
+  while read line; do
+    echo "<prosody pitch=\"$(echo "$line * $ESPEAK_BEEP_PITCH_MUL" | bc)\">$ESPEAK_TEXT_BEEP</prosody>"
+  done | espeak $ESPEAK_PARAMS -m
+}
+
+beeper () {
+  ping -n -i $PING_DELAY "$IP" | stdbuf -o L grep "time=" | stdbuf -o L cut -f 4 -d "=" | stdbuf -o L cut -d " " -f 1 | while read f; do
+    test -z "$f" && sleep 2 && continue
+    echo $f
+    printf "\r[%s] %7.2f ms" "$IP" "$f" >&2
+    test "$PING_DELAY" != "0" && sleep "$PING_DELAY"
+  done | $use_beep
+}
+
+espeak_ping_pong () {
+  ping -n -i $PING_DELAY "$IP" | stdbuf -o L grep "time=" | stdbuf -o L cut -f 4 -d "=" | stdbuf -o L cut -d " " -f 1 | while read f; do
+    printf "%s " "$ESPEAK_TEXT_PING"
+    test -z "$f" && sleep 2 && continue
+    printf "\r[%s] %7.2f ms" "$IP" "$f" >&2
+    test "$ESPEAK_PONG_DELAY_MUL" != "0" && printf "<break time=\"%fms\" />" "$(echo "scale=5; ($f * $ESPEAK_PONG_DELAY_MUL)" | bc)"
+    echo "$ESPEAK_TEXT_PONG"
+  done | espeak $ESPEAK_PARAMS -m
+}
+
+if test "$BEEP_METHOD" = "do_pingpong"; then
+  method="espeak_ping_pong"
+else
+  method="beeper"
+  use_beep="$BEEP_METHOD"
+fi
+$method

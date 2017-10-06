@@ -1,0 +1,9 @@
+#!/bin/sh
+#for i in $(seq 99 -1 0); do printf "$i .. "; espeak -v en-scottish "$i bottles of beer on the wall. $i bottles of beer. Take one down, pass it around. $(( $i - 1 )) bottles of beer."; sleep 0.3; done
+
+[ -z "$1" ] && delay="500" || delay="$1"
+[ -z "$ESPEAK_PARAMS" ] && ESPEAK_PARAMS="-v en-scottish -s 200"
+
+for i in $(seq 99 -1 0); do
+  printf "%s . " "<break time=\"${delay}ms\" />$i bottles of beer on the wall. $i bottles of beer. Take one down, pass it around. $(( $i - 1 )) bottles of beer."
+done | espeak $ESPEAK_PARAMS -m
